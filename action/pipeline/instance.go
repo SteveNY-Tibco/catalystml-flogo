@@ -2,11 +2,9 @@ package pipeline
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/project-flogo/catalystml-flogo/action/types"
-
 	"github.com/project-flogo/core/data"
 	"github.com/project-flogo/core/support/log"
 )
@@ -18,6 +16,7 @@ type Instance struct {
 	logger log.Logger
 }
 
+// NewInstance gets new instance from defination
 func NewInstance(definition *Definition, id string, logger log.Logger) *Instance {
 
 	return &Instance{def: definition, id: id, logger: logger}
@@ -27,16 +26,18 @@ func (inst *Instance) Id() string {
 	return inst.id
 }
 
+// Run runs the instance of the CML.
 func (inst *Instance) Run(input map[string]interface{}) (output map[string]interface{}, err error) {
 
-	currentInput := make(map[string]interface{})
-
+	// Get the Scope of the CML pipeline.
+	// Scope is the collection of the data in the CML
 	scope, err := NewPipelineScope(input, inst.def.labels)
 
 	if err != nil {
 		return nil, err
 	}
 
+	// Log the time
 	start := time.Now()
 
 	//Check the type of the input of the pipeline.
@@ -55,45 +56,24 @@ func (inst *Instance) Run(input map[string]interface{}) (output map[string]inter
 
 	}
 
-	//Execute the pipeline.
-	for key, stage := range inst.def.stages {
-
-		inst.logger.Debugf("Operation Input Mapper for stage [%v]: [%v]", stage.name+"-"+strconv.Itoa(key), stage.inputMapper)
-		if stage.inputMapper != nil {
-
-			currentInput, err = stage.inputMapper.Apply(scope)
-			if err != nil {
-				return nil, err
-			}
-
-		}
-
-		inst.logger.Debugf("Starting operation [%v] with inputs: [%v]", stage.name+"-"+strconv.Itoa(key), currentInput)
-
-		stageOutput, err := stage.opt.Eval(currentInput)
+	//Run the tasks.
+	for key, task := range inst.def.tasks {
+		task.Position()
+		scope, err = task.Eval(scope, inst.logger)
 
 		if err != nil {
-			return nil, err
-		}
-
-		scope.SetValue(stage.output, stageOutput)
-		inst.logger.Debugf("Setting output for [%v] operation outputs: [%v] ", stage.name+"-"+strconv.Itoa(key), stageOutput)
-
-		_, err = stage.outputMapper.Apply(scope)
-
-		inst.logger.Debugf("Scope after operation [%v] : [%v]", stage.name+"-"+strconv.Itoa(key), scope)
-
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Error %s in task \"%s-%v\" ", err.Error(), task.Name(), key)
 		}
 
 	}
-	output = scope.values
+
+	// Set the output.
 
 	if inst.def.output.Data != nil {
 		mf := GetMapperFactory()
 		mappings := make(map[string]interface{})
 
+		// Type Switch
 		switch t := inst.def.output.Data.(type) {
 		case map[string]interface{}:
 			for key, val := range t {
@@ -103,17 +83,29 @@ func (inst *Instance) Run(input map[string]interface{}) (output map[string]inter
 			mappings["data"] = inst.def.output.Data
 		}
 
+		// Get the data from output expression
 		outMapper, err := mf.NewMapper(mappings)
+		if err != nil {
+			return nil, err
+		}
 		output, err = outMapper.Apply(scope)
 
 		if err != nil {
 			return nil, err
 		}
 		var definedType data.Type
-		if inst.def.output.Type == "dataframe" || inst.def.output.Type == "map" {
-			definedType, _ = data.ToTypeEnum("object")
 
-			givenType, _ := data.GetType(output)
+		// Check if the output is defined as dataframe or map.
+		if inst.def.output.Type == "dataframe" || inst.def.output.Type == "map" {
+			definedType, err = data.ToTypeEnum("object")
+			if err != nil {
+				return nil, err
+			}
+
+			givenType, err := data.GetType(output)
+			if err != nil {
+				return nil, err
+			}
 
 			if definedType != givenType {
 				return nil, fmt.Errorf("Type mismatch in output. Defined type [%s] passed type [%s]", definedType, givenType)
@@ -128,7 +120,10 @@ func (inst *Instance) Run(input map[string]interface{}) (output map[string]inter
 
 		for key, _ := range output {
 
-			givenType, _ := data.GetType(output[key])
+			givenType, err := data.GetType(output[key])
+			if err != nil {
+				return nil, err
+			}
 
 			if definedType != givenType {
 				return nil, fmt.Errorf("Type mismatch in output. Defined type [%s] passed type [%s]", definedType, givenType)

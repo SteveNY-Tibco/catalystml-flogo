@@ -11,6 +11,7 @@ import (
 	_ "github.com/project-flogo/catalystml-flogo/operations/common"
 	_ "github.com/project-flogo/catalystml-flogo/operations/image_processing"
 	_ "github.com/project-flogo/catalystml-flogo/operations/math"
+	_ "github.com/project-flogo/catalystml-flogo/operations/nlp"
 	_ "github.com/project-flogo/catalystml-flogo/operations/restructuring"
 	_ "github.com/project-flogo/catalystml-flogo/operations/string_processing"
 	"github.com/project-flogo/core/action"
@@ -57,6 +58,7 @@ func (f *ActionFactory) Initialize(ctx action.InitContext) error {
 
 }
 
+// New returns the Action from the config.
 func (f *ActionFactory) New(config *action.Config) (action.Action, error) {
 
 	settings := &Settings{}
@@ -124,6 +126,7 @@ func (f *Action) IOMetadata() *metadata.IOMetadata {
 	return f.definition.MetaData()
 }
 
+// Run runs the instance of the CML pipeline.
 func (f *Action) Run(context context.Context, inputs map[string]interface{}) (map[string]interface{}, error) {
 
 	retData, err := f.inst.Run(inputs)
